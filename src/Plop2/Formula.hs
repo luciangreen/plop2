@@ -99,7 +99,7 @@ inferNative xs
     geometric () = case xs of
       (i : s2 : _) | i /= 0 && s2 `mod` i == 0 -> check (Exponential i (s2 `div` i))
       _ -> Nothing
-    polynomial () = firstJust [ \() -> polyOf d | d <- [3 .. fromIntegral (length xs) - 2] ]
+    polynomial () = firstJust [ \() -> polyOf d | d <- [3 .. toInteger (length xs) - 2] ]
     polyOf d =
       let prefix = take (fromIntegral d + 1) xs
           cs = forward prefix

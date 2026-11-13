@@ -1,7 +1,7 @@
 -- | plop2 command line.
 module Main (main) where
 
-import Control.Monad (forM, forM_, unless, when)
+import Control.Monad (forM, forM_, unless)
 import Data.Char (ord)
 import Data.List (intercalate, isPrefixOf, sortOn)
 import qualified Data.IntSet as IS
