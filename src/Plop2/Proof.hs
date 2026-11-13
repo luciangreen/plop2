@@ -143,7 +143,7 @@ helperProgram = either (const emptyProgram) id (parseProgram helperText)
 helperSourceCopy :: String
 helperSourceCopy = unlines
   [ "plop2_nth_r(K, T, R) :- ( plop2_nth_char(K, T, C) -> R = c(C) ; R = none )."
-  , "plop2_nth_char(K, T, C) :- ( integer(T) -> plop2_int_char(K, T, C) ; atom(T) -> B is K - 1, sub_atom(T, B, 1, _, C) ; nth1(K, T, C) )."
+  , "plop2_nth_char(K, T, C) :- ( is_list(T) -> nth1(K, T, C) ; integer(T) -> plop2_int_char(K, T, C) ; atom(T) -> B is K - 1, sub_atom(T, B, 1, _, C) )."
   , "plop2_int_char(K, N, C) :- ( N < 0 -> ( K =:= 1 -> C = '-' ; K1 is K - 1, M is -N, plop2_int_char(K1, M, C) ) ; plop2_ndigits(N, D), K >= 1, K =< D, Digit is (N // 10 ^ (D - K)) mod 10, Code is 0'0 + Digit, char_code(C, Code) )."
   , "plop2_ndigits(N, D) :- ( N < 10 -> D = 1 ; M is N // 10, plop2_ndigits(M, D0), D is D0 + 1 )."
   , "plop2_chain(_, [], none)."
