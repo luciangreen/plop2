@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -17,11 +17,4 @@ jobs:
       - name: SWI-Prolog for the mnns bridge tests
         run: sudo apt-get update -qq && sudo apt-get install -y -qq swi-prolog-nox
       - name: Build and test (Build.hs)
-        run: runghc Build.hs ci 2>&1 | tee ci.log; test "${PIPESTATUS[0]}" -eq 0
-      - name: TEMPORARY publish log
-        if: always() && github.event_name == 'push'
-        run: |
-          touch ci.log; mkdir -p "$RUNNER_TEMP/log"; cp ci.log "$RUNNER_TEMP/log/"; cd "$RUNNER_TEMP/log"
-          echo "${{ github.sha }} ${{ job.status }}" > status.txt
-          git init -q && git checkout -q -b ci-log && git add . && git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm log
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-log
+        run: runghc Build.hs ci

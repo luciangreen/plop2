@@ -11,10 +11,30 @@ the cut-free interpreter, and cut elimination. Closed forms come from
 
 ## Build
 
+plop2 is written in Haskell (with Prolog for programs, examples and proofs).
+
 ```sh
 git clone https://github.com/luciangreen/detlog2 ../detlog2   # or set DETLOG2_DIR
-./scripts/ci.sh            # builds build/plop2 and runs the tests
+runghc Build.hs            # builds build/plop2
+runghc Build.hs test       # builds, then runs tests/Cli.hs (end-to-end tests)
 ```
+
+## Proofs
+
+Every output comes with `OUT.proof`, and nothing is written unless the
+independent checker (`Plop2.Proof`) accepts it.
+`plop2 proof-check SOURCE OUT OUT.proof` re-checks the proof from files. The
+proof covers every clause:
+
+- every source goal is **kept**, **dropped** or **consumed**;
+- a goal is dropped only with a checked **totality certificate** (it always
+  succeeds, once). A goal that may fail is kept;
+- each position's program returns `c(Char)`, or `none` when the first
+  answer's output is too short, so it never skips to a later answer;
+- formulas are checked by exhaustive evaluation on their domain;
+- input-character facts are checked by a watched symbolic run.
+
+The rules are in [docs/proof_rules.md](docs/proof_rules.md).
 
 ## One program per character
 
@@ -23,15 +43,19 @@ plop2 chars examples/greet.pl double/2 3
 ```
 
 ```prolog
-double__char1([X|_], C) :-
-    C = X.
+double__char1__alt([], R) :-
+    R = none.
+double__char1__alt([X|_], R) :-
+    R = c(X).
 
-double__char2([X|_], C) :-
-    C = X.
-
-double__char3([_|Xs], C) :-
-    double__char1(Xs, C).
+double__char3__alt([], R) :-
+    R = none.
+double__char3__alt([_|Xs], R) :-
+    double__char1__r(Xs, R).
 ```
+
+Each position `K` also has `double__charK__r(In, R) :- once(double__charK__alt(In, R))`
+and `double__charK(In, C) :- double__charK__r(In, c(C))`.
 
 Given the program `double([X|Xs], [X,X|Ys]) :- double(Xs, Ys).`, plop2 builds
 each position's program separately:
@@ -115,8 +139,13 @@ letter__char1(N, C) :-
 The formula is exact on the domain by exhaustion. Outside the domain, the
 sliced program answers.
 
-## Assumption
+## Limits
 
-A dropped goal only built data for other characters, and is assumed to have
-succeeded. `plop2 run` checks every position against the original output, so
-any program where this does not hold shows up as a mismatch.
+- **Text built-ins in dropped goals** are assumed to receive values of their
+  type. A type error would have aborted the original.
+- **Text parts of a concatenation** that are built by non-user code (for
+  example, digits from `number_codes/2` inside `append/3`) are read from
+  their full value.
+- **Recursion** over the output is sliced per position. Recursion that only
+  builds other data is dropped when it is certified total (structural
+  recursion on an input list); otherwise it is kept.
