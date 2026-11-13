@@ -28,6 +28,12 @@ candidate_dir(Here, D) :-
     atom_concat(Here, '/build/detlog2-src', D),
     exists_directory(D).
 
+clone_if_none([D|_], _, D).
+clone_if_none([], Here, D) :-
+    atom_concat(Here, '/build/detlog2-src', D),
+    make_directory_path('build'),
+    process_create(path(git), [clone, '--depth', '1', 'https://github.com/luciangreen/detlog2', D], []).
+
 %  detlog2 is needed before its runtime can be loaded: clone it when no
 %  copy is found (findall/3 keeps this free of choicepoints and cuts).
 :- prolog_load_context(directory, Here),
@@ -36,12 +42,6 @@ candidate_dir(Here, D) :-
    absolute_file_name(Dir, Abs),
    setenv('DETLOG2_DIR', Abs),
    asserta(user:file_search_path(detlog2, Abs)).
-
-clone_if_none([D|_], _, D).
-clone_if_none([], Here, D) :-
-    atom_concat(Here, '/build/detlog2-src', D),
-    make_directory_path('build'),
-    process_create(path(git), [clone, '--depth', '1', 'https://github.com/luciangreen/detlog2', D], []).
 
 :- use_module(detlog2(src/detlog_runtime)).
 
