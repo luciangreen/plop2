@@ -2,13 +2,16 @@
 --
 --   runghc Build.hs          build build/plop2
 --   runghc Build.hs test     build, then run the end-to-end tests
---   runghc Build.hs ci       as test; fetches detlog2 (and mnns) when they are not given
+--   runghc Build.hs ci       as test; fetches detlog2 (and mnns) when they are not given;
+--                            then checks the 200 recorded inputs and outputs
+--   runghc Build.hs ios        run the 200 inputs and write io/ios.txt
+--   runghc Build.hs check-ios  run them again and fail if any output changed
 --
 -- DETLOG2_DIR (default ../detlog2) and MNNS_DIR select the other repositories.
 module Main (main) where
 
 import Control.Monad (unless, when)
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist)
 import System.Environment (getArgs, lookupEnv, setEnv)
 import System.Exit (ExitCode(..), exitWith)
 import System.Process (rawSystem)
@@ -27,6 +30,15 @@ main = do
     run "ghc" ["-O1", "-i" ++ detlog2 ++ "/src", "-outputdir", "build/d2", "-o", "build/detlog2", detlog2 ++ "/app/Main.hs"]
     run "ghc" ["-O0", "-outputdir", "build/t", "-o", "build/cli-tests", "tests/Cli.hs"]
     run "./build/cli-tests" []
+  when (ci) $ do
+    have <- doesFileExist "io/ios.txt"
+    when have (ios "check")
+  when (take 1 args == ["ios"]) (ios "make")
+  when (take 1 args == ["check-ios"]) (ios "check")
+  where
+    ios mode = do
+      run "ghc" ["-O0", "-outputdir", "build/io", "-o", "build/ios", "io/Ios.hs"]
+      run "./build/ios" [mode]
 
 -- | A sibling repository: from the environment, next to this one, or cloned.
 repo :: String -> FilePath -> FilePath -> String -> Bool -> IO FilePath
