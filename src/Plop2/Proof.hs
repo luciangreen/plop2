@@ -308,24 +308,110 @@ checkCerts here prog sc dropped =
           Comp "-" [a] -> isArith a
           _ -> False
         userDefined = maybe False (`M.member` progPreds prog) (goalKey g)
-        ok = not userDefined && case (cert, g) of
+        ok = case (cert, goalKey g) of
+          (Comp "total" [Comp "pred" [Comp "/" [Atom f, Int n], modeT]], Just key)
+            | key == (f, fromIntegral n), userDefined, Right ins <- intsOf modeT ->
+                callModeOk ins g prod gnd && totalPred prog Set.empty Nothing key ins
+          _ -> not userDefined && builtinOk
+        builtinOk = case (cert, g) of
           (Comp "total" [Atom "true"], Atom "true") -> True
           (Comp "total" [Atom "output"], Atom "nl") -> True
           (Comp "total" [Atom "output"], Comp f [_]) -> f `elem` ["write", "print", "writeln", "writeq", "write_canonical"]
           (Comp "total" [Atom "fresh_unify"], Comp "=" [Var x _, t]) -> freshV x t
           (Comp "total" [Atom "fresh_unify"], Comp "=" [t, Var x _]) -> freshV x t
           (Comp "total" [Atom "arith"], Comp "is" [Var x _, e']) -> freshV x e' && gr e' && isArith e'
+          (Comp "total" [Atom "text"], Comp "char_code" [Var x _, code]) -> gr code && freshV x code
           (Comp "total" [Atom "text"], Comp f [a, Var x _]) ->
             f `elem` ["atom_codes", "atom_chars", "atom_length", "number_codes", "number_chars", "upcase_atom", "downcase_atom", "atomic_list_concat"]
             && gr a && freshV x a
           (Comp "total" [Atom "text"], Comp "atomic_list_concat" [l, sp, Var x _]) -> gr l && gr sp && freshV x (Comp "x" [l, sp])
-          (Comp "total" [Atom "text"], Comp "char_code" [Var x _, code]) -> gr code && freshV x code
           (Comp "total" [Atom "text"], Comp f [a, b, Var x _]) -> f `elem` ["atom_concat", "string_concat"] && gr a && gr b && freshV x (Comp "x" [a, b])
           (Comp "total" [Atom "append"], Comp "append" [a, b, Var x _]) -> gr a && freshV x (Comp "x" [a, b])
           (Comp "total" [Atom "length"], Comp "length" [l, Var x _]) -> gr l && freshV x l
           (Comp "total" [Atom "reverse"], Comp "reverse" [l, Var x _]) -> gr l && freshV x l
           _ -> False
     ensure ok (here ++ "goal " ++ show ix ++ " (" ++ showTermQ g ++ ") is dropped without a valid totality certificate")
+
+-- | A call in a mode: the input positions are ground, the others are
+-- distinct variables that first occur here and not in the inputs.
+callModeOk :: [Int] -> Term -> IS.IntSet -> IS.IntSet -> Bool
+callModeOk ins g prod gnd =
+  let as = goalArgs g
+      inVars = IS.unions [ termVarIds a | (i, a) <- zip [0 ..] as, i `elem` ins ]
+      outs = [ a | (i, a) <- zip [0 ..] as, i `notElem` ins ]
+  in all (\i -> i < length as && IS.isSubsetOf (termVarIds (as !! i)) gnd) ins
+     && all (\a -> case a of
+                     Var x _ -> IS.member x prod && not (IS.member x inVars)
+                     _ -> False) outs
+     && length (Set.fromList [ x | Var x _ <- outs ]) == length outs
+
+-- | Totality of a predicate in a mode (the checker's own derivation; see
+-- docs/proof_rules.md, rule TOTAL).
+totalPred :: Program -> Set.Set PredKey -> Maybe (PredKey, [Int], Int, Int) -> PredKey -> [Int] -> Bool
+totalPred prog visiting _ key ins
+  | Set.member key visiting = False
+  | otherwise = case M.findWithDefault [] key (progPreds prog) of
+      [c] -> plainInputs c (-1) && body c Nothing
+      [a, b] -> or [ sw a b i || sw b a i | i <- ins ]
+      _ -> False
+  where
+    hargs c = goalArgs (clHead c)
+    plainInputs c skip =
+      let xs = [ x | (i, x) <- zip [0 ..] (hargs c), i `elem` ins, i /= skip ]
+      in all isVar xs && length (Set.fromList [ v | Var v _ <- xs ]) == length xs
+    sw cn cc i = case (hargs cn !! i, hargs cc !! i) of
+      (Atom "[]", Comp "." [Var hv _, Var tv _]) ->
+        hv /= tv && plainInputs cn i && plainInputs cc i
+        && and [ not (IS.member hv (termVarIds x)) && not (IS.member tv (termVarIds x))
+               | (j, x) <- zip [0 ..] (hargs cc), j `elem` ins, j /= i ]
+        && body cn Nothing && body cc (Just (i, tv))
+      _ -> False
+    body c rec' =
+      let gnd0 = IS.unions [ termVarIds x | (i, x) <- zip [0 ..] (hargs c), i `elem` ins ]
+          seen0 = IS.unions (map termVarIds (hargs c))
+          go _ _ [] = True
+          go gnd seen (g : gs) =
+            let prod = termVarIds g `IS.difference` seen
+            in goalTotal gnd prod g && go (gAfter gnd g) (seen `IS.union` termVarIds g) gs
+          goalTotal gnd prod g = case goalKey g of
+            Just k | k == key, Just (i, tv) <- rec' ->
+              callModeOk ins g prod gnd && case goalArgs g !! i of
+                Var x _ -> x == tv
+                _ -> False
+            Just k | M.member k (progPreds prog) ->
+              let as = goalArgs g
+                  ins' = [ j | (j, a) <- zip [0 ..] as, IS.isSubsetOf (termVarIds a) gnd ]
+              in callModeOk ins' g prod gnd && totalPred prog (Set.insert key visiting) Nothing k ins'
+            _ -> builtinTotal gnd prod g
+      in go gnd0 seen0 (conjList (clBody c))
+
+-- | The built-in totality rules (the same list as for dropped goals).
+builtinTotal :: IS.IntSet -> IS.IntSet -> Term -> Bool
+builtinTotal gnd prod g = case g of
+  Atom "true" -> True
+  Atom "nl" -> True
+  Comp f [_] | f `elem` ["write", "print", "writeln", "writeq", "write_canonical"] -> True
+  Comp "=" [Var x _, t] | freshV x t -> True
+  Comp "=" [t, Var x _] | freshV x t -> True
+  Comp "is" [Var x _, e] -> freshV x e && gr e && isArith e
+  Comp "char_code" [Var x _, code] -> gr code && freshV x code
+  Comp f [a, Var x _] | f `elem` ["atom_codes", "atom_chars", "atom_length", "number_codes", "number_chars", "upcase_atom", "downcase_atom", "atomic_list_concat"] ->
+    gr a && freshV x a
+  Comp "atomic_list_concat" [l, sp, Var x _] -> gr l && gr sp && freshV x (Comp "x" [l, sp])
+  Comp f [a, b, Var x _] | f `elem` ["atom_concat", "string_concat"] -> gr a && gr b && freshV x (Comp "x" [a, b])
+  Comp "append" [a, b, Var x _] -> gr a && freshV x (Comp "x" [a, b])
+  Comp "length" [l, Var x _] -> gr l && freshV x l
+  Comp "reverse" [l, Var x _] -> gr l && freshV x l
+  _ -> False
+  where
+    gr t = IS.isSubsetOf (termVarIds t) gnd
+    freshV x t = IS.member x prod && not (IS.member x (termVarIds t))
+    isArith t = case t of
+      Int _ -> True
+      Var _ _ -> True
+      Comp op [a, b] | op `elem` ["+", "-", "*"] -> isArith a && isArith b
+      Comp "-" [a] -> isArith a
+      _ -> False
 
 -- ---------------------------------------------------------------------------
 -- Element derivations
@@ -374,9 +460,12 @@ checkNode cx here srcVars sc subject k r node = case node of
           (x : _) -> return x
           [] -> Left (h ++ "missing sub-derivation")
         -- the producer of the subject variable in this scope
+        recorded = case info of
+          Comp "branch" (g : _) -> g
+          _ -> info
         producerOfSubject = case subject of
           Var v _ -> case producerIn sc v of
-            Just (ix, g) | g == info -> return (ix, g)
+            Just (ix, g) | g == recorded -> return (ix, g)
             _ -> Left (h ++ "the recorded goal is not the first producer of the subject")
           _ -> Left (h ++ "subject is not a variable")
         before ix = sc { scGoals = take (ix - 1) (scGoals sc) }
@@ -545,6 +634,21 @@ checkNode cx here srcVars sc subject k r node = case node of
         clos <- forM (zip parts subs) $ \(p, cl) -> checkClosure cx h srcVars (before ix) mode k p cl
         need (goal == Comp "plop2_chain" [Int (fromIntegral k), mkList [ c | (c, _) <- clos ] (Atom "[]"), r]) "template"
         return (mconcat (map snd clos)) { nrConsumed = g : concatMap (nrConsumed . snd) clos }
+      "el_chain_const" -> do
+        (ix, g) <- producerOfSubject
+        (mode, parts) <- case g of
+          Comp "append" [a, b, x] | isSubj x -> return (False, [a, b])
+          Comp f [a, b, x] | isSubj x, f `elem` ["atom_concat", "string_concat"] -> return (True, [a, b])
+          Comp "atomic_list_concat" [l, x] | isSubj x -> (,) True <$> listOf l
+          Comp "atomic_list_concat" [l, sp, x] | isSubj x -> (\ps -> (True, interleaveC sp ps)) <$> listOf l
+          _ -> Left (h ++ "producer is not a concatenation")
+        need (length subs == length parts) "one closure per part"
+        clos <- forM (zip parts subs) $ \(p, cl) -> checkClosure cx h srcVars (before ix) mode k p cl
+        let (prefix, _) = closurePrefixC [ c | (c, _) <- clos ]
+        need (k <= length prefix && goal == Comp "=" [r, cOf (prefix !! (k - 1))]) "element is not in the static prefix"
+        -- only the concatenations are consumed; any producer of a later part is left to the slice
+        let chainGoals = [ pg | Comp "cl" [Atom "cl_chain", _, _, Comp "chain" [pg, _]] <- subs ]
+        return mempty { nrConsumed = g : chainGoals }
       "el_branch" -> do
         (ix, g) <- producerOfSubject
         (mc, t, e) <- case g of
@@ -609,6 +713,15 @@ checkNode cx here srcVars sc subject k r node = case node of
   where
     subjId (Var i _) = i
     subjId _ = -1
+
+closurePrefixC :: [Term] -> ([Term], Bool)
+closurePrefixC [] = ([], True)
+closurePrefixC (c : cs) = case c of
+  Comp "plop2_static" [l] | Right xs <- listOf l -> let (rest, ok) = closurePrefixC cs in (xs ++ rest, ok)
+  Comp "plop2_chain_c" [l] | Right inner <- listOf l ->
+    let (xs, ok) = closurePrefixC inner
+    in if ok then let (rest, ok2) = closurePrefixC cs in (xs ++ rest, ok2) else (xs, False)
+  _ -> ([], False)
 
 interleaveC :: Term -> [Term] -> [Term]
 interleaveC _ [] = []

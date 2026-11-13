@@ -456,9 +456,13 @@ producerExpr env cx before g v vt k r = case g of
       let goal = Comp "plop2_chain" [Int (fromIntegral k), mkList [ c | (c, _, _) <- cls ] (Atom "[]"), r]
           subs = [ Comp "cl" [Atom rule, p, c, info] | ((c, rule, info), p) <- zip cls parts ]
           needs = IS.unions [ clNeeds rule p c | ((c, rule, _), p) <- zip cls parts ]
-          consumed = [ info | (_, "cl_spec", info) <- cls ]
-                     ++ [ pg | (_, "cl_chain", Comp "chain" [pg, _]) <- cls ]
-      return (EX (enode "el_chain" vt k r goal subs g) needs consumed IS.empty)
+          chainConsumed = [ pg | (_, "cl_chain", Comp "chain" [pg, _]) <- cls ]
+          consumed = [ info | (_, "cl_spec", info) <- cls ] ++ chainConsumed
+          (prefix, _) = closurePrefix [ c | (c, _, _) <- cls ]
+      if k <= length prefix
+        then -- the static parts at the front already give element k
+          return (EX (enode "el_chain_const" vt k r (eq r (cOf (prefix !! (k - 1)))) subs g) IS.empty chainConsumed IS.empty)
+        else return (EX (enode "el_chain" vt k r goal subs g) needs consumed IS.empty)
     clNeeds rule p c = case rule of
       "cl_static" -> IS.empty
       "cl_value" -> localVars env p
@@ -514,6 +518,18 @@ producerExpr env cx before g v vt k r = case g of
       let gB = groundThrough (cxGround cx) pbefore
           usedAny = Set.unions [ M.findWithDefault Set.empty (Spec key pos jj) (envUsed env) | jj <- [1 .. k] ]
       in and [ IS.isSubsetOf (termVarIds a) gB | (ix, a) <- zip [0 ..] (goalArgs pg), ix /= pos, Set.member ix usedAny ]
+
+-- | The elements a list of closures certainly starts with, and whether
+-- that is all of them.
+closurePrefix :: [Term] -> ([Term], Bool)
+closurePrefix [] = ([], True)
+closurePrefix (c : cs) = case c of
+  Comp "plop2_static" [l] | Just xs <- staticList l ->
+    let (rest, complete) = closurePrefix cs in (xs ++ rest, complete)
+  Comp "plop2_chain_c" [l] | Just inner <- staticList l ->
+    let (xs, complete) = closurePrefix inner
+    in if complete then let (rest, c2) = closurePrefix cs in (xs ++ rest, c2) else (xs, False)
+  _ -> ([], False)
 
 data Mode = ListMode | TextMode
 
@@ -571,8 +587,13 @@ closeOver env bound ground gs demand0 consumed =
 -- | A certificate that a goal always succeeds exactly once and binds only
 -- the variables it produces, given the variables ground before it.
 totality :: Program -> IS.IntSet -> IS.IntSet -> Term -> Maybe Term
-totality prog gnd prod g
-  | maybe False (`M.member` progPreds prog) (goalKey g) = Nothing
+totality prog = totalityIn prog Set.empty Nothing
+
+-- | With the predicates being proved total (for recursion) and, inside a
+-- list-switch clause, the predicate and tail variable a recursive call may use.
+totalityIn :: Program -> Set.Set PredKey -> Maybe (PredKey, [Int], Int, Int) -> IS.IntSet -> IS.IntSet -> Term -> Maybe Term
+totalityIn prog visiting self gnd prod g
+  | Just key <- goalKey g, M.member key (progPreds prog) = userTotal key
   | otherwise = case g of
       Atom "true" -> cert "true"
       Atom "nl" -> cert "output"
@@ -593,6 +614,26 @@ totality prog gnd prod g
       _ -> Nothing
   where
     cert rule = Just (Comp "total" [Atom rule])
+    -- a user predicate: inputs (ground arguments) and outputs (fresh,
+    -- distinct variables), and the predicate total in that mode
+    userTotal key@(f, n) =
+      let as = goalArgs g
+          ins = [ i | (i, a) <- zip [0 ..] as, gr a ]
+          outs = [ a | (i, a) <- zip [0 ..] as, i `notElem` ins ]
+          outsFresh = all (\a -> case a of
+                                  Var x _ -> IS.member x prod && not (IS.member x (IS.unions (map termVarIds [ b | (i, b) <- zip [0 ..] as, i `elem` ins ])))
+                                  _ -> False) outs
+                      && distinctV outs
+          modeT = mkList (map (Int . fromIntegral) ins) (Atom "[]")
+          ok = case self of
+            Just (sk, sins, sw, tailV) | sk == key ->
+              -- structural recursion: the switch argument is the tail
+              ins == sins && case as !! sw of
+                Var x _ -> x == tailV
+                _ -> False
+            _ -> not (Set.member key visiting) && predTotal prog (Set.insert key visiting) key ins
+      in if outsFresh && ok then Just (Comp "total" [Comp "pred" [Comp "/" [Atom f, Int (fromIntegral n)], modeT]]) else Nothing
+    distinctV vs = length (Set.fromList [ x | Var x _ <- vs ]) == length vs
     gr t = IS.isSubsetOf (termVarIds t) gnd
     freshVar x t = IS.member x prod && not (IS.member x (termVarIds t))
     arith t = case t of
@@ -601,6 +642,44 @@ totality prog gnd prod g
       Comp op [a, b] | op `elem` ["+", "-", "*"] -> arith a && arith b
       Comp "-" [a] -> arith a
       _ -> False
+
+-- | A predicate is total in a mode (its input positions are ground) when it
+-- has one clause, or two clauses that switch on an input list ([] and
+-- [H|T]), every other input head argument is a distinct variable, and every
+-- body goal is total; a recursive call must be on the tail T (so the
+-- recursion terminates on a proper list).
+predTotal :: Program -> Set.Set PredKey -> PredKey -> [Int] -> Bool
+predTotal prog visiting key ins = case M.findWithDefault [] key (progPreds prog) of
+  [c] -> clauseOk c Nothing
+  [c1, c2] -> or [ switchOk c1 c2 sw || switchOk c2 c1 sw | sw <- ins ]
+  _ -> False
+  where
+    headArgs c = goalArgs (clHead c)
+    inputVarsOk c skip =
+      let xs = [ a | (i, a) <- zip [0 ..] (headArgs c), i `elem` ins, i /= skip ]
+      in all isVar xs && length (Set.fromList [ x | Var x _ <- xs ]) == length xs
+    switchOk cNil cCons sw = case (headArgs cNil !! sw, headArgs cCons !! sw) of
+      (Atom "[]", Comp "." [Var hv _, Var tv _]) | hv /= tv ->
+        inputVarsOk cNil sw && inputVarsOk cCons sw
+        && not (any (\(i, a) -> i `elem` ins && i /= sw && (IS.member hv (termVarIds a) || IS.member tv (termVarIds a))) (zip [0 ..] (headArgs cCons)))
+        && clauseOk cNil Nothing && clauseOk cCons (Just (sw, tv))
+      _ -> False
+    clauseOk c sw = (case sw of
+                       Nothing -> inputVarsOk c (-1)
+                       Just _ -> True)
+                    && bodyOk c sw
+    bodyOk c sw =
+      let gnd0 = IS.unions [ termVarIds a | (i, a) <- zip [0 ..] (headArgs c), i `elem` ins ]
+          gs = conjList (clBody c)
+          self = fmap (\(s', tv) -> (key, ins, s', tv)) sw
+          step (Just (gnd, seen)) g' =
+            let prod = termVarIds g' `IS.difference` seen
+            in case totalityIn prog visiting self gnd prod g' of
+                 Just _ -> Just (groundAfter gnd g' `IS.union` IS.empty, seen `IS.union` termVarIds g')
+                 Nothing -> Nothing
+          step Nothing _ = Nothing
+          seen0 = IS.unions (map termVarIds (headArgs c))
+      in foldl' step (Just (gnd0, seen0)) gs /= Nothing
 
 -- ---------------------------------------------------------------------------
 -- Helpers written into every generated file (cut-free).
