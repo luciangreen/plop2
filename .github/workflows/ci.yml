@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -14,13 +14,14 @@ jobs:
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.6'
-      - name: Install SWI-Prolog (for the mnns bridge tests)
+      - name: SWI-Prolog for the mnns bridge tests
         run: sudo apt-get update -qq && sudo apt-get install -y -qq swi-prolog-nox
-      - name: Fetch mnns and detlog2
-        run: git clone --depth 1 https://github.com/luciangreen/mnns "$RUNNER_TEMP/mnns" && git clone --depth 1 https://github.com/luciangreen/detlog2 "$RUNNER_TEMP/detlog2"
-      - name: Build and test
-        env:
-          MNNS_DIR: ${{ runner.temp }}/mnns
-          DETLOG2_DIR: ${{ runner.temp }}/detlog2
+      - name: Build and test (Build.hs)
+        run: runghc Build.hs ci 2>&1 | tee ci.log; test "${PIPESTATUS[0]}" -eq 0
+      - name: TEMPORARY publish log
+        if: always() && github.event_name == 'push'
         run: |
-          ./scripts/ci.sh
+          touch ci.log; mkdir -p "$RUNNER_TEMP/log"; cp ci.log "$RUNNER_TEMP/log/"; cd "$RUNNER_TEMP/log"
+          echo "${{ github.sha }} ${{ job.status }}" > status.txt
+          git init -q && git checkout -q -b ci-log && git add . && git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm log
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-log

@@ -17,3 +17,13 @@ up(C, U) :- upcase_atom(C, U).
 % A cut: detlog2 turns it into if_commit/3 before slicing.
 tag(In, Out) :- In = [], !, Out = "empty".
 tag(In, Out) :- append("<", In, T), append(T, ">", Out).
+
+% The first answer's output has no character 2.  The program for character 2
+% must answer "none", not skip to the second clause's "abc".
+short(_, "a").
+short(_, "abc").
+
+% A goal that may fail is kept even though it only looks at other data:
+% length(In, L), L < 4 selects the clause.
+guarded(In, Out) :- length(In, L), L < 4, append("ok:", In, Out).
+guarded(_, "too long").
