@@ -341,8 +341,12 @@ producerExpr env bound before g v vt k r = case g of
                      [kk - 1, kk - 2 .. 0]
         let build [] = Atom "fail"
             build [(Atom "true", rj, _)] = rj
+            -- a probe that cannot fail (a fixed character): later cases are unreachable
+            build ((Comp "=" [_, _], rj, _) : _) = rj
             build ((tj, rj, _) : more) = Comp ";" [Comp "->" [tj, rj], build more]
-            goal = Comp ";" [Comp "->" [ek, Atom "true"], build alts]
+            goal = case build alts of
+              Atom "fail" -> ek
+              rest -> Comp ";" [Comp "->" [ek, Atom "true"], rest]
         return (goal, nk `IS.union` IS.unions [ n | (_, _, n) <- alts ])
 
 data Mode = ListMode | TextMode

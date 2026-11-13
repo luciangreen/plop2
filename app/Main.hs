@@ -179,6 +179,7 @@ runCmd fl file goalS n = do
         Nothing -> a
       suffix i q = if length textInputs == 1 then show q else show (i + 1) ++ "_" ++ show q
       symArgs = [ if i == j then Atom "$out" else symArg i a | (i, a) <- zip [0 ..] args ]
+      inputName v = head ([ n' | a <- symArgs, Var w n' <- termVarsOrdered a, w == v ] ++ ["I"])
       inputVarIds = IS.fromList [ v | a <- symArgs, Var v _ <- termVarsOrdered a ]
   -- reference output of the original algorithm
   let refStream = refRun defaultOptions (withPrelude p) goal nv
@@ -198,8 +199,16 @@ runCmd fl file goalS n = do
         concrete = firstValue prog concGoal 900001 cVar
     case (symErr, symAnswers) of
       ([], [s]) | inputsUntouched s inputVarIds -> do
-        -- a pure function of the input characters: emit it as data
-        let val = resolve s cVar
+        -- a pure function of the input characters: emit it as data.  The
+        -- run may have aliased an input variable to a fresh one; map back.
+        let back = M.fromList [ (w, Var v n') | v <- IS.toList inputVarIds
+                                             , Var w _ <- [walk s (Var v "")]
+                                             , let n' = inputName v ]
+            unalias t = case t of
+              Var w _ -> M.findWithDefault t w back
+              Comp f as -> Comp f (map unalias as)
+              _ -> t
+            val = unalias (resolve s cVar)
             headArgs = [ if i == j then val else a | (i, a) <- zip [0 ..] symArgs ]
             cl = Clause (Comp (name ++ "__in") headArgs) (Atom "true") 900001
             actual = substituteInputs textInputs val
@@ -239,8 +248,10 @@ runCmd fl file goalS n = do
     Nothing -> return ()
     Just _ -> writeOut fl hdr (generated p sr key j n (Just extra))
   where
+    -- every input character variable is still an unbound variable, and no
+    -- two of them were made equal
     inputsUntouched s ids = all (\v -> case walk s (Var v "") of
-                                         Var w _ -> w == v
+                                         Var _ _ -> True
                                          _ -> False) (IS.toList ids)
                             && distinctUnbound s ids
     distinctUnbound s ids =
