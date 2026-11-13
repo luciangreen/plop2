@@ -910,8 +910,11 @@ concat_of(G, IsX, H, Mode, Parts) :-
               ( Mode = true, pp_list_of(L, Ps), interleave_c(Sp, Ps, Parts) ),
               ( wmsg(H, "producer is not a concatenation", M), pp_fail(M) ))))).
 
-interleave_c(_, [], []).
-interleave_c(S, [X|Xs], Out) :-
+interleave_c(S, Xs, Out) :-
+    interleave_c0(Xs, S, Out).
+
+interleave_c0([], _, []).
+interleave_c0([X|Xs], S, Out) :-
     interleave_c_(Xs, S, X, Out).
 
 interleave_c_([], _, X, [X]).

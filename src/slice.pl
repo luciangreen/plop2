@@ -822,9 +822,12 @@ ground_list_t(T, M) :-
                         ( ground_list_t(Tl, M1), maybe_cons(M1, H, M) ),
                         M = nothing)).
 
-interleave_t(_, [], []).
-interleave_t(S, [X|Xs], Out) :-
-    if_commit(Xs == [], Out = [X], ( interleave_t(S, Xs, Rest), Out = [X, S|Rest] )).
+interleave_t(S, Xs, Out) :-
+    interleave_t_(Xs, S, Out).
+
+interleave_t_([], _, []).
+interleave_t_([X|Xs], S, Out) :-
+    if_commit(Xs == [], Out = [X], ( interleave_t_(Xs, S, Rest), Out = [X, S|Rest] )).
 
 % ---------------------------------------------------------------------------
 % Keeping, dropping (with a certificate) and consuming goals
