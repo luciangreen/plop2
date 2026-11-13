@@ -662,7 +662,7 @@ predTotal prog visiting key ins = case M.findWithDefault [] key (progPreds prog)
       (Atom "[]", Comp "." [Var hv _, Var tv _]) | hv /= tv ->
         inputVarsOk cNil sw && inputVarsOk cCons sw
         && not (any (\(i, a) -> i `elem` ins && i /= sw && (IS.member hv (termVarIds a) || IS.member tv (termVarIds a))) (zip [0 ..] (headArgs cCons)))
-        && clauseOk cNil Nothing && clauseOk cCons (Just (sw, tv))
+        && bodyOk cNil Nothing && bodyOk cCons (Just (sw, tv))
       _ -> False
     clauseOk c sw = (case sw of
                        Nothing -> inputVarsOk c (-1)

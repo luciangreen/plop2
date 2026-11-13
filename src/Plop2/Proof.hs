@@ -317,8 +317,8 @@ checkCerts here prog sc dropped =
           (Comp "total" [Atom "true"], Atom "true") -> True
           (Comp "total" [Atom "output"], Atom "nl") -> True
           (Comp "total" [Atom "output"], Comp f [_]) -> f `elem` ["write", "print", "writeln", "writeq", "write_canonical"]
-          (Comp "total" [Atom "fresh_unify"], Comp "=" [Var x _, t]) -> freshV x t
-          (Comp "total" [Atom "fresh_unify"], Comp "=" [t, Var x _]) -> freshV x t
+          (Comp "total" [Atom "fresh_unify"], Comp "=" [a, b]) ->
+            (case a of { Var x _ -> freshV x b; _ -> False }) || (case b of { Var x _ -> freshV x a; _ -> False })
           (Comp "total" [Atom "arith"], Comp "is" [Var x _, e']) -> freshV x e' && gr e' && isArith e'
           (Comp "total" [Atom "text"], Comp "char_code" [Var x _, code]) -> gr code && freshV x code
           (Comp "total" [Atom "text"], Comp f [a, Var x _]) ->
