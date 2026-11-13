@@ -678,7 +678,9 @@ predTotal prog visiting key ins = case M.findWithDefault [] key (progPreds prog)
                  Just _ -> Just (groundAfter gnd g' `IS.union` IS.empty, seen `IS.union` termVarIds g')
                  Nothing -> Nothing
           step Nothing _ = Nothing
-          seen0 = IS.unions (map termVarIds (headArgs c))
+          -- head variables only in output positions are fresh: the caller passes
+          -- fresh output variables
+          seen0 = gnd0
       in foldl' step (Just (gnd0, seen0)) gs /= Nothing
 
 -- ---------------------------------------------------------------------------

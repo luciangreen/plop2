@@ -368,7 +368,7 @@ totalPred prog visiting _ key ins
       _ -> False
     body c rec' =
       let gnd0 = IS.unions [ termVarIds x | (i, x) <- zip [0 ..] (hargs c), i `elem` ins ]
-          seen0 = IS.unions (map termVarIds (hargs c))
+          seen0 = gnd0   -- output-only head variables are fresh in this mode
           go _ _ [] = True
           go gnd seen (g : gs) =
             let prod = termVarIds g `IS.difference` seen
