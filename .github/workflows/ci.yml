@@ -7,14 +7,24 @@ on:
 permissions:
   contents: read
 jobs:
-  build-test:
+  prolog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SWI-Prolog
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq swi-prolog-nox
+      - name: Build and test (build.pl)
+        run: swipl build.pl ci
+  haskell:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.6'
-      - name: SWI-Prolog for the mnns bridge tests
+      - name: SWI-Prolog
         run: sudo apt-get update -qq && sudo apt-get install -y -qq swi-prolog-nox
-      - name: Build and test (Build.hs)
-        run: runghc Build.hs ci
+      - name: Build and test the Haskell version (haskell/Build.hs)
+        run: runghc haskell/Build.hs ci
+      - name: The Prolog and Haskell versions record the same 200 outputs
+        run: swipl build.pl && swipl io/ios.pl compare haskell/io/ios.txt

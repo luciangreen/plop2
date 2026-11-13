@@ -17,7 +17,7 @@ title :: String
 title = "plop2"
 
 binary :: FilePath
-binary = "./build/plop2"
+binary = "./build/hs/plop2"
 
 -- | Choose element i (from the case number k and a salt) of a list.
 pick :: Int -> Int -> [a] -> a
@@ -93,9 +93,9 @@ main = do
   outs <- mapM (runCase env) cases
   let text = render (zip cases outs)
   case mode of
-    ["make"] -> writeFile "io/ios.txt" text >> putStrLn "wrote io/ios.txt (200 inputs and outputs)"
+    ["make"] -> writeFile "haskell/io/ios.txt" text >> putStrLn "wrote haskell/io/ios.txt (200 inputs and outputs)"
     ["check"] -> do
-      old <- readFile "io/ios.txt"
+      old <- readFile "haskell/io/ios.txt"
       if length old == length text && old == text
         then putStrLn "All 200 inputs give the outputs in io/ios.txt."
         else do

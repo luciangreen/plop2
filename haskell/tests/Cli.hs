@@ -23,8 +23,8 @@ main = do
       expectWith exe name want args = do
         o <- runP exe args
         report name (want `isInfixOf` o) o
-      expect = expectWith "./build/plop2"
-      expectD2 = expectWith "./build/detlog2"
+      expect = expectWith "./build/hs/plop2"
+      expectD2 = expectWith "./build/hs/detlog2"
       fileHas name want path = do
         s <- readFile path
         report name (want `isInfixOf` s) s
@@ -33,7 +33,7 @@ main = do
         report name (not (bad `isInfixOf` s)) s
 
   -- separate programs per position ----------------------------------------------
-  _ <- runP "./build/plop2" ["chars", "examples/greet.pl", "greet/2", "3", "-o", "build/greet3.pl"]
+  _ <- runP "./build/hs/plop2" ["chars", "examples/greet.pl", "greet/2", "3", "-o", "build/greet3.pl"]
   fileHas "chars: char1 program" "greet__char1__alt(_, R)" "build/greet3.pl"
   fileHas "chars: char3 program" "greet__char3__alt(_, R)" "build/greet3.pl"
   fileLacks "chars: the output-building append is not kept" "append(" "build/greet3.pl"
@@ -44,7 +44,7 @@ main = do
   writeFile "build/greet3_bad.pl" (replaceFirst "c('H')" "c('J')" greet3)
   expect "proof-check: tampered code rejected" "proof rejected"
     ["proof-check", "examples/greet.pl", "build/greet3_bad.pl", "build/greet3.pl.proof"]
-  _ <- runP "./build/plop2" ["chars", "examples/greet.pl", "double/2", "3", "-o", "build/double3.pl"]
+  _ <- runP "./build/hs/plop2" ["chars", "examples/greet.pl", "double/2", "3", "-o", "build/double3.pl"]
   fileHas "chars: double char3 calls char1's program on the tail" "double__char1__r(Xs, R)" "build/double3.pl"
   fileHas "chars: double char1 has no tail variable" "double__char1__alt([X|_], R)" "build/double3.pl"
   fileHas "chars: an empty output answers none" "double__char1__alt([], R)" "build/double3.pl"
@@ -72,7 +72,7 @@ main = do
   expect "run: tag empty matches" "match: every position agrees" ["run", "examples/greet.pl", "tag([], Out)", "5"]
   expect "run: square matches" "match: every position agrees" ["run", "examples/numbers.pl", "square(12, Out)", "4"]
   expect "run: input must be given" "must be given" ["run", "examples/greet.pl", "greet(X, Out)", "3"]
-  _ <- runP "./build/plop2" ["run", "examples/greet.pl", "greet(\"bob\", Out)", "11", "-o", "build/greet_in.pl"]
+  _ <- runP "./build/hs/plop2" ["run", "examples/greet.pl", "greet(\"bob\", Out)", "11", "-o", "build/greet_in.pl"]
   fileHas "run: per-position input-variable programs" "greet__char8__in([I1, _, _], I1)." "build/greet_in.pl"
   expect "proof-check: input-character facts re-checked symbolically" "proof accepted"
     ["proof-check", "examples/greet.pl", "build/greet_in.pl", "build/greet_in.pl.proof"]
@@ -93,7 +93,7 @@ main = do
     (Just _, Just dir) ->
       expect "formula: found by mnns" "[mnns AlgebraPLOp]" ["formula", "examples/numbers.pl", "letter/2", "1", "--domain", "0..20", "--mnns", dir]
     _ -> putStrLn "SKIP mnns formula (swipl or MNNS_DIR missing)"
-  _ <- runP "./build/plop2" ["formula", "examples/numbers.pl", "letter/2", "3", "--domain", "0..20", "-o", "build/letter.pl"]
+  _ <- runP "./build/hs/plop2" ["formula", "examples/numbers.pl", "letter/2", "3", "--domain", "0..20", "-o", "build/letter.pl"]
   fileHas "formula: guarded formula clause" "integer(N)" "build/letter.pl"
   fileHas "formula: sliced program outside the domain" "letter__char1__r(N, c(C))" "build/letter.pl"
   fileHas "formula: char 2 drops char 1's computation with certificates" "total(arith)" "build/letter.pl.proof"

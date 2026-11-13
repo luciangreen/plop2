@@ -1,4 +1,4 @@
-plop2: 200 inputs and outputs, from real runs (runghc Build.hs ios writes this file; runghc Build.hs check-ios checks it).
+plop2: 200 inputs and outputs, from real runs (swipl io/ios.pl make writes this file; swipl io/ios.pl check checks it).
 
 1. plop2 run examples/greet.pl 'double("abc", Out)' 2
    => goal: double("abc", Out)
