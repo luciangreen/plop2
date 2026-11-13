@@ -1,6 +1,6 @@
 # plop2 proof rules
 
-Every output of plop2 comes with a proof file `OUT.proof`. `Plop2.Proof`
+Every output of plop2 comes with a proof file `OUT.proof`. `src/plop_proof.pl`
 checks the proof without using the slicer:
 `plop2 proof-check SOURCE OUT OUT.proof`. Every command runs the checker
 first and writes or runs nothing it rejects. The source is made cut-free by

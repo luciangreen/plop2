@@ -11,18 +11,40 @@ the cut-free interpreter, and cut elimination. Closed forms come from
 
 ## Build
 
-plop2 is written in Haskell (with Prolog for programs, examples and proofs).
+plop2 is written in cut-free, choicepoint-free SWI-Prolog: no `!`, `;`,
+`->`, `\+`, `once/1` or `forall/2` in its source. A decision is
+`if_commit/3` (from detlog2's `src/detlog_runtime.pl`), which takes the first
+answer of its condition with `findall/3` + `limit/2`, and generators are only
+called inside `findall/3`, an `if_commit/3` condition or `once_det/1`.
+detlog2's `tools/cutfree.pl` checks every source file in the build.
 
 ```sh
 git clone https://github.com/luciangreen/detlog2 ../detlog2   # or set DETLOG2_DIR
-runghc Build.hs            # builds build/plop2
-runghc Build.hs test       # builds, then runs tests/Cli.hs (end-to-end tests)
+swipl build.pl             # builds build/plop2 (a saved state)
+swipl build.pl test        # builds, runs the cut-free check and tests/cli.pl
+swipl build.pl ci          # as test (cloning detlog2 and mnns if needed), then
+                           # checks the 200 recorded runs in io/ios.txt
+swipl plop2.pl chars examples/greet.pl greet/2 3   # or run from source
 ```
+
+The Haskell version it was ported from is kept in `haskell/`
+(`runghc haskell/Build.hs test`). CI builds both and checks that they record
+the same 200 outputs (`swipl io/ios.pl compare haskell/io/ios.txt`).
+
+Layout:
+
+- `plop2.pl` - loader and `main`; loads detlog2's Prolog sources
+- `src/slice.pl` - the per-position slicer (port of `Plop2.Slice`)
+- `src/plop_proof.pl` - the independent proof checker (port of `Plop2.Proof`)
+- `src/formula.pl` - closed forms and the mnns AlgebraPLOp bridge
+- `src/plop2_cli.pl` - the commands
+- `tests/cli.pl`, `io/ios.pl` - end-to-end tests and the 200 recorded runs
+- `haskell/` - the Haskell version
 
 ## Proofs
 
 Every output comes with `OUT.proof`, and nothing is written unless the
-independent checker (`Plop2.Proof`) accepts it.
+independent checker (`src/plop_proof.pl`) accepts it.
 `plop2 proof-check SOURCE OUT OUT.proof` re-checks the proof from files. The
 proof covers every clause:
 
@@ -123,7 +145,7 @@ For each position whose program reads only the chosen integer input:
 
 1. plop2 samples that position's character codes over the domain.
 2. It calls `mnn_algebraplop:infer_sequence_formula/2` through SWI-Prolog.
-   Without SWI-Prolog or mnns, it uses a direct Haskell transcription of
+   Without mnns, it uses a direct transcription of
    that predicate (same shapes, same order).
 3. It re-checks the formula on every sample.
 4. It emits a guarded closed form:
